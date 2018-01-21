@@ -8,3 +8,6 @@ _rust_rocksdb*
 *rlib
 tags
 path
+
+*.iml
+.idea/*
