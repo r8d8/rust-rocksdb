@@ -28,6 +28,7 @@ use std::path::Path;
 use std::ptr;
 use std::slice;
 use std::str;
+use local_encoding::{Encoding, Encoder};
 
 pub fn new_bloom_filter(bits: c_int) -> *mut ffi::rocksdb_filterpolicy_t {
     unsafe { ffi::rocksdb_filterpolicy_create_bloom(bits) }
@@ -573,18 +574,6 @@ impl<'a> Drop for Snapshot<'a> {
 }
 
 impl DB {
-    /// Open a database with default options.
-    pub fn open_default<P: AsRef<Path>>(path: P) -> Result<DB, Error> {
-        let mut opts = Options::default();
-        opts.create_if_missing(true);
-        DB::open(&opts, path)
-    }
-
-    /// Open the database with the specified options.
-    pub fn open<P: AsRef<Path>>(opts: &Options, path: P) -> Result<DB, Error> {
-        DB::open_cf(opts, path, &[])
-    }
-
     /// Open a database with specified options and column family.
     ///
     /// A column family must be created first by calling `DB::create_cf`.
@@ -593,8 +582,16 @@ impl DB {
     ///
     /// * Panics if the column family doesn't exist.
     pub fn open_cf<P: AsRef<Path>>(opts: &Options, path: P, cfs: &[&str]) -> Result<DB, Error> {
+        let path_str = path.as_ref().to_str().unwrap();
         let path = path.as_ref();
-        let cpath = match CString::new(path.to_string_lossy().as_bytes()) {
+        let encoded_path = match Encoding::ANSI.to_bytes(path_str) {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(Error::new("Failed to encode path to codepage when opening rocksdb"
+                    .to_string()))
+            }
+        };
+        let cpath = match CString::new(encoded_path) {
             Ok(c) => c,
             Err(_) => {
                 return Err(Error::new(
@@ -681,6 +678,18 @@ impl DB {
         })
     }
 
+    /// Open a database with default options.
+    pub fn open_default<P: AsRef<Path>>(path: P) -> Result<DB, Error> {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        DB::open(&opts, path)
+    }
+
+    /// Open the database with the specified options.
+    pub fn open<P: AsRef<Path>>(opts: &Options, path: P) -> Result<DB, Error> {
+        DB::open_cf(opts, path, &[])
+    }
+
     pub fn list_cf<P: AsRef<Path>>(opts: &Options, path: P) -> Result<Vec<String>, Error> {
         let path = path.as_ref();
         let cpath = match CString::new(path.to_string_lossy().as_bytes()) {
@@ -713,7 +722,24 @@ impl DB {
 
 
     pub fn destroy<P: AsRef<Path>>(opts: &Options, path: P) -> Result<(), Error> {
-        let cpath = CString::new(path.as_ref().to_string_lossy().as_bytes()).unwrap();
+        let path = path.as_ref().to_str().unwrap();
+        let encoded_path = match Encoding::ANSI.to_bytes(path) {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(Error::new("Failed to encode path to codepage when destroying \
+                    rocksdb"
+                               .to_string()))
+            }
+        };
+
+        let cpath = match CString::new(encoded_path) {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(Error::new("Failed to convert path to CString when destroying \
+                        rocksdb"
+                               .to_string()))
+            }
+        };
         unsafe {
             ffi_try!(ffi::rocksdb_destroy_db(opts.inner, cpath.as_ptr(),));
         }
@@ -721,7 +747,24 @@ impl DB {
     }
 
     pub fn repair<P: AsRef<Path>>(opts: Options, path: P) -> Result<(), Error> {
-        let cpath = CString::new(path.as_ref().to_string_lossy().as_bytes()).unwrap();
+        let path = path.as_ref().to_str().unwrap();
+        let encoded_path = match Encoding::ANSI.to_bytes(path) {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(Error::new("Failed to encode path to codepage when reparing \
+                    rocksdb"
+                    .to_string()))
+            }
+        };
+
+        let cpath = match CString::new(encoded_path) {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(Error::new("Failed to convert path to CString when reparing \
+                        rocksdb"
+                    .to_string()))
+            }
+        };
         unsafe {
             ffi_try!(ffi::rocksdb_repair_db(opts.inner, cpath.as_ptr(),));
         }
@@ -823,7 +866,15 @@ impl DB {
     }
 
     pub fn create_cf(&mut self, name: &str, opts: &Options) -> Result<ColumnFamily, Error> {
-        let cname = match CString::new(name.as_bytes()) {
+        let encoded_name = match Encoding::ANSI.to_bytes(name) {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(Error::new("Failed to encode path to codepage when opening \
+                    rocksdb"
+                               .to_string()))
+            }
+        };
+        let cname = match CString::new(encoded_name) {
             Ok(c) => c,
             Err(_) => {
                 return Err(Error::new(
@@ -1370,6 +1421,7 @@ fn iterator_test() {
 }
 
 #[test]
+#[ignore]
 fn non_unicode_path_test() {
     let path = "путь_не_юникод/_rust_rocksdb_unicode_test";
     {
