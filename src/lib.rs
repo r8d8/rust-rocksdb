@@ -33,6 +33,7 @@
 
 extern crate libc;
 extern crate librocksdb_sys as ffi;
+extern crate local_encoding;
 
 #[macro_use]
 mod ffi_util;
