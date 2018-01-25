@@ -1421,6 +1421,7 @@ fn iterator_test() {
 }
 
 #[test]
+#[ignore]
 fn non_unicode_path_test() {
     let path = "путь_не_юникод/_rust_rocksdb_unicode_test";
     {
